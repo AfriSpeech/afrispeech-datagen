@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# generated synthetic data (default --out location)
+/data/

@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voxcpm-synth"
+version = "0.1.0"
+description = "Generate synthetic TTS training data from text datasets with the AfriSpeech VoxCPM model — voice-cloned male/female speakers, parallel instances, resume."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "CC-BY-4.0" }
+dependencies = [
+    "voxcpm",
+    "datasets>=2.19",
+    "huggingface_hub>=0.23",
+    "soundfile>=0.12",
+    "librosa>=0.10",
+    "numpy",
+    "scipy",
+    "tqdm",
+    "torch",
+    "torchaudio",
+    "transformers",
+    "tokenizers",
+    "accelerate",
+    "sentencepiece",
+    "modelscope",
+    "funasr",
+]
+
+[project.scripts]
+voxcpm-synth = "voxcpm_synth.cli:main"
+
+[tool.setuptools]
+packages = ["voxcpm_synth"]
+
+[tool.setuptools.package-data]
+voxcpm_synth = ["speakers/*.wav", "speakers/*.txt"]
