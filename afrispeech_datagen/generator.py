@@ -2,7 +2,7 @@
 
 Streams a text dataset, synthesises each row with the AfriSpeech VoxCPM model
 using the built-in male/female reference speakers, trims silence, and writes
-16 kHz mono WAVs + a manifest locally. Supports parallel model instances,
+WAVs at the chosen sample rate + a manifest locally. Supports parallel model instances,
 a target-hours budget, and resume.
 """
 
@@ -29,7 +29,8 @@ import base64 as _b64
 MODEL_ID = _b64.b64decode(
     "QWZyaVNwZWVjaC92b3hjcG0tYWZyaXNwZWVjaC1mdWxsLWluZmVyZW5jZS0yMDI2MDYwNg=="
 ).decode()
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 16000      # native rate the model synthesises at
+DEFAULT_SR = 22050       # default OUTPUT rate (TTS-friendly); override with --sample-rate
 SILENCE_TOP_DB = 30
 SILENCE_MAX_GAP_S = 0.3
 
@@ -83,6 +84,15 @@ def trim_silences(wav, sr=SAMPLE_RATE, top_db=SILENCE_TOP_DB, max_gap_s=SILENCE_
         pieces.append(wav[start:end])
         prev_end = end
     return np.concatenate(pieces)
+
+
+def resample(wav, src_sr: int, dst_sr: int):
+    """Resample a mono float array from ``src_sr`` to ``dst_sr`` (no-op if equal)."""
+    wav = np.asarray(wav, dtype=np.float32)
+    if src_sr == dst_sr or wav.size == 0:
+        return wav
+    import librosa
+    return librosa.resample(wav, orig_sr=src_sr, target_sr=dst_sr)
 
 
 def auto_instances() -> int:
@@ -147,6 +157,7 @@ class _Run:
         self.wav_dir = ""
         self.cfg_value = 2.0
         self.steps = 10
+        self.sample_rate = DEFAULT_SR
 
 
 def _worker(run: _Run, model_id: str):
@@ -166,12 +177,13 @@ def _worker(run: _Run, model_id: str):
             continue
         try:
             wav = _generate_one(model, caches, text, gender, run.cfg_value, run.steps)
-            dur = float(len(wav)) / SAMPLE_RATE
+            wav = resample(wav, SAMPLE_RATE, run.sample_rate)   # to requested output rate
+            dur = float(len(wav)) / run.sample_rate
             uid = f"{idx:07d}_{run.run_id}"          # filename stem == manifest id
             rel = f"wavs/{uid}.wav"
             out = os.path.join(run.wav_dir, f"{uid}.wav")
             tmp = out + ".tmp"
-            sf.write(tmp, wav, SAMPLE_RATE, subtype="PCM_16")
+            sf.write(tmp, wav, run.sample_rate, subtype="PCM_16")
             os.replace(tmp, out)
             with run.lock:
                 run.rows[str(idx)] = {
@@ -211,6 +223,7 @@ def generate(
     target_hours: float = 1.0,
     voices: str = "custom",
     male_pct: int = 50,
+    sample_rate: int = DEFAULT_SR,
     instances: int | None = None,
     cfg_value: float = 2.0,
     steps: int = 10,
@@ -224,7 +237,7 @@ def generate(
     """Generate synthetic speech for a dataset into ``out_dir``.
 
     Source is either an HF ``dataset`` (+ ``text_column``) or an in-memory list of
-    ``texts`` (one sentence each). Writes ``wavs/*.wav`` (16 kHz mono),
+    ``texts`` (one sentence each). Writes ``wavs/*.wav`` (mono, at ``sample_rate``),
     ``manifest.jsonl`` and ``progress.json``. Resumes automatically if
     ``out_dir/progress.json`` exists (skips done rows). ``on_clip(seconds)`` fires
     as clips land; ``progress(msg)`` for status. Returns a summary dict.
@@ -238,6 +251,7 @@ def generate(
 
     run = _Run()
     run.cfg_value, run.steps = cfg_value, steps
+    run.sample_rate = int(sample_rate)
     run.wav_dir = os.path.join(out_dir, "wavs")
 
     # Resume from a prior progress.json in this folder.
@@ -263,7 +277,8 @@ def generate(
 
     meta = {"model_id": model_id, "dataset": dataset or "(text-file)",
             "config": config or "", "split": split, "text_column": text_column or "",
-            "voices": voices, "male_pct": male_pct, "target_hours": target_hours}
+            "voices": voices, "male_pct": male_pct, "target_hours": target_hours,
+            "sample_rate": int(sample_rate)}
 
     # Source: a list of sentences, or a streamed HF dataset column.
     if texts is not None:
@@ -313,8 +328,8 @@ def generate(
 
 
 def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
-            split="train", voices="custom", male_pct=50, cfg_value=2.0, steps=10,
-            n=5, max_chars=400, model_id=MODEL_ID, token=None):
+            split="train", voices="custom", male_pct=50, sample_rate=DEFAULT_SR,
+            cfg_value=2.0, steps=10, n=5, max_chars=400, model_id=MODEL_ID, token=None):
     """Generate ``n`` preview clips into ``out_dir/preview`` and return their info.
 
     Source is ``texts=[...]`` or an HF ``dataset`` + ``text_column``.
@@ -338,10 +353,11 @@ def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
             continue
         gender = pick_gender(idx, voices, male_pct)
         wav = _generate_one(model, caches, text, gender, cfg_value, steps)
+        wav = resample(wav, SAMPLE_RATE, int(sample_rate))
         path = pdir / f"preview_{len(out)+1}_{gender}.wav"
-        sf.write(str(path), wav, SAMPLE_RATE, subtype="PCM_16")
+        sf.write(str(path), wav, int(sample_rate), subtype="PCM_16")
         out.append({"file": str(path), "gender": gender,
-                    "duration": round(len(wav) / SAMPLE_RATE, 2), "text": text})
+                    "duration": round(len(wav) / int(sample_rate), 2), "text": text})
     return out
 
 

@@ -5,6 +5,7 @@ model, writing 16 kHz WAVs + a manifest, with parallel instances and resume.
 """
 
 from .generator import (
+    DEFAULT_SR,
     MODEL_ID,
     SAMPLE_RATE,
     SPEAKERS,
@@ -20,6 +21,7 @@ from .generator import (
 )
 
 __all__ = [
+    "DEFAULT_SR",
     "MODEL_ID",
     "SAMPLE_RATE",
     "SPEAKERS",

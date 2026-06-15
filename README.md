@@ -2,11 +2,23 @@
 
 Turn a **text dataset** into **synthetic TTS training audio** — streamed through
 the AfriSpeech VoxCPM model, voice-cloning built-in male/female reference
-speakers. It writes 16 kHz WAVs + a manifest locally, runs multiple model
+speakers. It writes WAVs (resampled to your target rate) + a manifest locally, runs multiple model
 instances in parallel, and resumes where it left off.
 
 > **A GPU is required** for usable speed (VoxCPM is a neural TTS model; ~4.5 GB
 > VRAM per instance). A T4 works; bigger GPUs run more instances in parallel.
+
+## Supported languages
+
+The model can synthesise **50 languages** — give it text in any of them:
+
+> Afar, Akan (Twi), Amharic, Baoule, Bemba, Burkina Faso Fulfulde, Dan, Ewe, Fon,
+> Fulani, Ganda (Luganda), Hausa, Igbo, Jola-Kasa, Kalanga, Kalenjin, Kikuyu,
+> Lingala, Lozi, Luba-Lulua, Makhuwa-Shirima, Malgache, Mankanya, Mbunda, Mende,
+> Mossi, Ngambay, Northeastern Dinka, Nyanja, Oromo (Borana-Arsi-Guji), Pular,
+> Punu, Rundi (Kirundi), Rwandan (Kinyarwanda), Sango, Shilluk, Shona, Somali,
+> Sukuma, Swahili, Tarifit, Tashelhayt, Tigrinya, Tiv, Tumbuka, West Central
+> Oromo, Western Niger Fulfulde, Wolof, Yaka, Yoruba.
 
 ## Run in the cloud (free T4)
 
@@ -55,7 +67,7 @@ Everything lands in `data/<name>/` (override with `--out`):
 
 ```
 data/twi-run/
-  wavs/<id>.wav            16 kHz mono, silence-trimmed
+  wavs/<id>.wav            mono, silence-trimmed, at --sample-rate (default 22050)
   manifest.jsonl           full info: id, file, text, gender, speaker, duration
   progress.json            resume state (re-run to continue)
   # + the manifest(s) for the formats you asked for:

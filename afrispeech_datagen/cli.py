@@ -24,7 +24,7 @@ import argparse
 import os
 import sys
 
-from .generator import MODEL_ID, sanitize_name
+from .generator import DEFAULT_SR, MODEL_ID, sanitize_name
 
 DATASET_ORG = "AfriSpeech"
 
@@ -46,6 +46,9 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--hours", type=float, default=1.0, help="target hours of audio")
     gen.add_argument("--voices", choices=["custom", "male", "female"], default="custom")
     gen.add_argument("--male-pct", type=int, default=50, help="%% male in custom mode")
+    gen.add_argument("--sample-rate", type=int, default=DEFAULT_SR,
+                     help=f"output WAV sample rate in Hz (default {DEFAULT_SR}; "
+                          "e.g. 24000/44100 for your TTS framework)")
     gen.add_argument("--instances", type=int, help="parallel model instances (default: auto by VRAM)")
     gen.add_argument("--cfg", type=float, default=2.0, dest="cfg_value", help="CFG value")
     gen.add_argument("--steps", type=int, default=10, help="inference timesteps")
@@ -101,8 +104,8 @@ def main(argv: list[str] | None = None) -> int:
         clips = generator.preview(
             out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
             config=args.config, split=args.split, voices=args.voices, male_pct=args.male_pct,
-            cfg_value=args.cfg_value, steps=args.steps, n=args.preview,
-            max_chars=args.max_chars, model_id=args.model, token=args.token,
+            sample_rate=args.sample_rate, cfg_value=args.cfg_value, steps=args.steps,
+            n=args.preview, max_chars=args.max_chars, model_id=args.model, token=args.token,
         )
         for c in clips:
             print(f"  [{c['gender']}] {c['duration']}s  {c['file']}\n      {c['text'][:90]}")
@@ -123,7 +126,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = generator.generate(
         out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
         config=args.config, split=args.split, target_hours=args.hours,
-        voices=args.voices, male_pct=args.male_pct, instances=args.instances,
+        voices=args.voices, male_pct=args.male_pct, sample_rate=args.sample_rate,
+        instances=args.instances,
         cfg_value=args.cfg_value, steps=args.steps, max_chars=args.max_chars,
         model_id=args.model, token=args.token, save_every=args.save_every,
         on_clip=_on_clip, progress=lambda m: bar.set_description(m[:48]),
