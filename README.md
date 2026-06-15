@@ -91,8 +91,9 @@ written verbatim (no normalisation — that's the framework's job).
 |------|---------|
 | `--dataset ID` / `--text-column COL` | source: an HF dataset column |
 | `--text-file PATH` | source: a .txt file, one sentence per line |
+| `--max-samples N` | use at most N input rows (independent of `--hours`) |
 | `--config` / `--split` | dataset config / split (default split `train`) |
-| `--hours H` | target hours of audio to generate |
+| `--hours H` | target hours of audio (default 1.0 unless `--max-samples` is set) |
 | `--voices custom\|male\|female` | speaker selection (default `custom`) |
 | `--male-pct N` | %% male in `custom` mode (deterministic per row) |
 | `--max-chars N` | skip rows longer than this (default 400) |
@@ -107,6 +108,10 @@ written verbatim (no normalisation — that's the framework's job).
 | `--token` | HF token (else `HF_TOKEN` env) — for gated datasets/models |
 | `--preview N` | generate N preview clips and exit |
 | `--list-datasets` | list datasets under the AfriSpeech org |
+
+Generation stops at whichever limit comes first — `--hours`, `--max-samples`, or
+the end of the dataset. Use `--max-samples 500` (with no `--hours`) to generate
+from exactly the first 500 usable rows of your input.
 
 Resuming is automatic: point `--name`/`--out` at an existing run folder (or just
 re-run the same command) and it reads `progress.json` and skips finished rows.

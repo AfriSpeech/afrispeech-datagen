@@ -40,10 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
     src.add_argument("--split", default="train")
     src.add_argument("--text-column", help="column holding the text (with --dataset)")
     src.add_argument("--text-file", help="path to a .txt file with one sentence per line")
+    src.add_argument("--max-samples", type=int,
+                     help="use at most N input rows from the dataset/text-file")
     src.add_argument("--max-chars", type=int, default=400, help="skip rows longer than this")
 
     gen = p.add_argument_group("generation")
-    gen.add_argument("--hours", type=float, default=1.0, help="target hours of audio")
+    gen.add_argument("--hours", type=float, default=None,
+                     help="target hours of audio (default 1.0 unless --max-samples is set)")
     gen.add_argument("--voices", choices=["custom", "male", "female"], default="custom")
     gen.add_argument("--male-pct", type=int, default=50, help="%% male in custom mode")
     gen.add_argument("--sample-rate", type=int, default=DEFAULT_SR,
@@ -118,8 +121,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ---- full run --------------------------------------------------------- #
+    hours = args.hours
+    if hours is None and args.max_samples is None:
+        hours = 1.0   # safety default when nothing else bounds the run
+
     from tqdm.auto import tqdm
-    bar = tqdm(total=round(args.hours * 3600), unit="s", unit_scale=False,
+    bar = tqdm(total=round(hours * 3600) if hours else None, unit="s", unit_scale=False,
                desc="Synthesising audio", file=sys.stderr)
     state = {"last": 0.0}
 
@@ -131,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = generator.generate(
         out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
-        config=args.config, split=args.split, target_hours=args.hours,
+        config=args.config, split=args.split, target_hours=hours, max_samples=args.max_samples,
         voices=args.voices, male_pct=args.male_pct, sample_rate=args.sample_rate,
         precision=args.precision, instances=args.instances,
         cfg_value=args.cfg_value, steps=args.steps, max_chars=args.max_chars,

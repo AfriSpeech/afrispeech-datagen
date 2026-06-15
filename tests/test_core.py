@@ -57,6 +57,13 @@ def test_speakers_loaded():
         assert Path(SPEAKERS[g]["wav"]).exists()         # reference wav bundled
 
 
+def test_max_samples_and_hours_optional():
+    p = cli.build_parser()
+    a = p.parse_args(["--dataset", "org/ds", "--text-column", "text", "--max-samples", "500"])
+    assert a.max_samples == 500 and a.hours is None   # hours optional now
+    assert p.parse_args([]).max_samples is None
+
+
 def test_precision_and_instances():
     from afrispeech_datagen import auto_instances
     # CLI accepts the precision choices and a custom sample rate

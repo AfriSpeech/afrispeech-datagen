@@ -243,7 +243,8 @@ def generate(
     texts: list | None = None,
     config: str | None = None,
     split: str = "train",
-    target_hours: float = 1.0,
+    target_hours: float | None = 1.0,
+    max_samples: int | None = None,
     voices: str = "custom",
     male_pct: int = 50,
     sample_rate: int = DEFAULT_SR,
@@ -271,7 +272,7 @@ def generate(
 
     out_dir = str(out_dir)
     os.makedirs(os.path.join(out_dir, "wavs"), exist_ok=True)
-    target_seconds = max(0.0, float(target_hours)) * 3600
+    target_seconds = float("inf") if target_hours is None else max(0.0, float(target_hours)) * 3600
 
     run = _Run()
     run.cfg_value, run.steps = cfg_value, steps
@@ -303,7 +304,7 @@ def generate(
     meta = {"model_id": model_id, "dataset": dataset or "(text-file)",
             "config": config or "", "split": split, "text_column": text_column or "",
             "voices": voices, "male_pct": male_pct, "target_hours": target_hours,
-            "sample_rate": int(sample_rate)}
+            "max_samples": max_samples, "sample_rate": int(sample_rate)}
 
     # Source: a list of sentences, or a streamed HF dataset column.
     if texts is not None:
@@ -314,10 +315,13 @@ def generate(
         source = ((i, ex.get(text_column, "")) for i, ex in enumerate(ds))
 
     staged = 0
+    accepted = len(run.rows)          # rows already done (resume) count toward --max-samples
     for idx, raw in source:
         if run.stop.is_set() or run.fatal:
             break
         if run.total_seconds >= target_seconds:
+            break
+        if max_samples is not None and accepted >= max_samples:
             break
         if str(idx) in run.rows:
             continue
@@ -325,6 +329,7 @@ def generate(
         if not (2 <= len(text) <= max_chars):
             continue
         gender = pick_gender(idx, voices, male_pct)
+        accepted += 1
         while not run.stop.is_set():
             try:
                 run.q.put((idx, text, gender), timeout=2)
