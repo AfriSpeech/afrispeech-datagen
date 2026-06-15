@@ -3,8 +3,7 @@
 Streams a text dataset, synthesises each row with the AfriSpeech VoxCPM model
 using the built-in male/female reference speakers, trims silence, and writes
 16 kHz mono WAVs + a manifest locally. Supports parallel model instances,
-a target-hours budget, and resume. Ported from the Hugging Face Space, minus the
-task queue / OAuth / email / usage logging.
+a target-hours budget, and resume.
 """
 
 from __future__ import annotations

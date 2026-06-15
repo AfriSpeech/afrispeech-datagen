@@ -5,10 +5,6 @@ the AfriSpeech VoxCPM model, voice-cloning built-in male/female reference
 speakers. It writes 16 kHz WAVs + a manifest locally, runs multiple model
 instances in parallel, and resumes where it left off.
 
-A command-line port of the
-[Hugging Face Space](https://huggingface.co/spaces/AfriSpeech/VoxCPM-Synthetic-Data-Generator) —
-no UI, no queue, just run it.
-
 > **A GPU is required** for usable speed (VoxCPM is a neural TTS model; ~4.5 GB
 > VRAM per instance). A T4 works; bigger GPUs run more instances in parallel.
 
