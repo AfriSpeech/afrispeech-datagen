@@ -49,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
     gen.add_argument("--sample-rate", type=int, default=DEFAULT_SR,
                      help=f"output WAV sample rate in Hz (default {DEFAULT_SR}; "
                           "e.g. 24000/44100 for your TTS framework)")
+    gen.add_argument("--precision", choices=["fp32", "fp16", "bf16"], default="fp32",
+                     help="model precision. fp32 = safest (default). fp16 ≈ half VRAM & "
+                          "faster, but may degrade quality / NaN on some TTS models. "
+                          "bf16 ≈ half VRAM, more stable than fp16, but needs an Ampere+ "
+                          "GPU (A100/L4/H100) — NOT a T4.")
     gen.add_argument("--instances", type=int, help="parallel model instances (default: auto by VRAM)")
     gen.add_argument("--cfg", type=float, default=2.0, dest="cfg_value", help="CFG value")
     gen.add_argument("--steps", type=int, default=10, help="inference timesteps")
@@ -104,7 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         clips = generator.preview(
             out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
             config=args.config, split=args.split, voices=args.voices, male_pct=args.male_pct,
-            sample_rate=args.sample_rate, cfg_value=args.cfg_value, steps=args.steps,
+            sample_rate=args.sample_rate, precision=args.precision,
+            cfg_value=args.cfg_value, steps=args.steps,
             n=args.preview, max_chars=args.max_chars, model_id=args.model, token=args.token,
         )
         for c in clips:
@@ -127,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
         config=args.config, split=args.split, target_hours=args.hours,
         voices=args.voices, male_pct=args.male_pct, sample_rate=args.sample_rate,
-        instances=args.instances,
+        precision=args.precision, instances=args.instances,
         cfg_value=args.cfg_value, steps=args.steps, max_chars=args.max_chars,
         model_id=args.model, token=args.token, save_every=args.save_every,
         on_clip=_on_clip, progress=lambda m: bar.set_description(m[:48]),

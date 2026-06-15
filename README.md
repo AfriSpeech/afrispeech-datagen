@@ -92,6 +92,8 @@ written verbatim (no normalisation — that's the framework's job).
 | `--voices custom\|male\|female` | speaker selection (default `custom`) |
 | `--male-pct N` | %% male in `custom` mode (deterministic per row) |
 | `--max-chars N` | skip rows longer than this (default 400) |
+| `--sample-rate HZ` | output WAV rate (default 22050; e.g. 24000 for MeloTTS, 44100) |
+| `--precision fp32\|fp16\|bf16` | model precision (default fp32) — see Performance |
 | `--instances N` | parallel model instances (default: auto by VRAM) |
 | `--cfg` / `--steps` | CFG value / inference timesteps |
 | `--formats …` | TTS manifests to write: `ljspeech,piper,vits,melo` (default `ljspeech`) |
@@ -104,6 +106,22 @@ written verbatim (no normalisation — that's the framework's job).
 
 Resuming is automatic: point `--name`/`--out` at an existing run folder (or just
 re-run the same command) and it reads `progress.json` and skips finished rows.
+
+## Performance & GPU
+
+- **Parallel instances.** Several model copies pull rows off a shared queue
+  (~4.5 GB VRAM each in fp32). It auto-sizes by VRAM — e.g. **2 instances on a
+  T4** (16 GB). Push harder with `--instances 3` if it's stable; a T4 often
+  becomes compute-bound past that.
+- **Precision** (`--precision`):
+  - `fp32` — default, safest, highest quality.
+  - `fp16` — ~half the VRAM (so ~2× the instances) and faster on most GPUs, **but
+    may degrade quality or NaN** on TTS models; preview before committing.
+  - `bf16` — ~half the VRAM, more numerically stable than fp16, **but needs an
+    Ampere+ GPU (A100/L4/H100) — not a T4**.
+- **Sample rate.** The model synthesises at **16 kHz**; output is resampled to
+  `--sample-rate` so files match your framework, but true bandwidth stays ~8 kHz
+  (upsampling doesn't add detail).
 
 ## Use as a library
 

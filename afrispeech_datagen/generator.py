@@ -95,14 +95,15 @@ def resample(wav, src_sr: int, dst_sr: int):
     return librosa.resample(wav, orig_sr=src_sr, target_sr=dst_sr)
 
 
-def auto_instances() -> int:
-    """Parallel model instances that fit in VRAM (~4.5 GB each)."""
+def auto_instances(precision: str = "fp32") -> int:
+    """Parallel model instances that fit in VRAM (~4.5 GB fp32, ~2.5 GB half)."""
+    per = 2.5 if precision in ("fp16", "bf16") else 4.5
     try:
         import torch
         if not torch.cuda.is_available():
             return 1
         vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        return max(1, int((vram_gb * 0.8) // 4.5))
+        return max(1, int((vram_gb * 0.8) // per))
     except Exception:
         return 1
 
@@ -110,12 +111,38 @@ def auto_instances() -> int:
 # --------------------------------------------------------------------------- #
 # Model
 # --------------------------------------------------------------------------- #
-def load_instance(model_id: str = MODEL_ID):
+def _cast_model(model, dt) -> None:
+    """Best-effort cast of the model's torch modules to ``dt`` (fp16/bf16)."""
+    import torch
+    cast = False
+    for obj in (model, getattr(model, "tts_model", None)):
+        if obj is None:
+            continue
+        if isinstance(obj, torch.nn.Module):
+            obj.to(dt)
+            cast = True
+        else:
+            for v in vars(obj).values():
+                if isinstance(v, torch.nn.Module):
+                    v.to(dt)
+                    cast = True
+    if not cast:
+        raise RuntimeError("could not apply half precision to this model build; use --precision fp32")
+
+
+def load_instance(model_id: str = MODEL_ID, precision: str = "fp32"):
     from voxcpm import VoxCPM
     try:
-        return VoxCPM.from_pretrained(model_id, load_denoiser=False)
+        model = VoxCPM.from_pretrained(model_id, load_denoiser=False)
     except TypeError:
-        return VoxCPM.from_pretrained(model_id)
+        model = VoxCPM.from_pretrained(model_id)
+    if precision in ("fp16", "bf16"):
+        import torch
+        if precision == "bf16" and not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
+            raise RuntimeError("bf16 needs an Ampere+ GPU (A100/L4/H100…); not available here. "
+                               "Use --precision fp16 or fp32.")
+        _cast_model(model, torch.float16 if precision == "fp16" else torch.bfloat16)
+    return model
 
 
 def _generate_one(model, caches: dict, text: str, gender: str,
@@ -158,11 +185,12 @@ class _Run:
         self.cfg_value = 2.0
         self.steps = 10
         self.sample_rate = DEFAULT_SR
+        self.precision = "fp32"
 
 
 def _worker(run: _Run, model_id: str):
     try:
-        model = load_instance(model_id)
+        model = load_instance(model_id, run.precision)
     except Exception as e:  # noqa: BLE001
         run.fatal = run.fatal or f"model load failed: {e}"
         run.stop.set()
@@ -224,6 +252,7 @@ def generate(
     voices: str = "custom",
     male_pct: int = 50,
     sample_rate: int = DEFAULT_SR,
+    precision: str = "fp32",
     instances: int | None = None,
     cfg_value: float = 2.0,
     steps: int = 10,
@@ -252,6 +281,7 @@ def generate(
     run = _Run()
     run.cfg_value, run.steps = cfg_value, steps
     run.sample_rate = int(sample_rate)
+    run.precision = precision
     run.wav_dir = os.path.join(out_dir, "wavs")
 
     # Resume from a prior progress.json in this folder.
@@ -267,7 +297,7 @@ def generate(
     else:
         run.run_id = uuid.uuid4().hex[:8]
 
-    n_inst = instances if instances and instances > 0 else auto_instances()
+    n_inst = instances if instances and instances > 0 else auto_instances(precision)
     if progress:
         progress(f"loading {n_inst} model instance(s)…")
     workers = [threading.Thread(target=_worker, args=(run, model_id), daemon=True)
@@ -329,14 +359,15 @@ def generate(
 
 def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
             split="train", voices="custom", male_pct=50, sample_rate=DEFAULT_SR,
-            cfg_value=2.0, steps=10, n=5, max_chars=400, model_id=MODEL_ID, token=None):
+            precision="fp32", cfg_value=2.0, steps=10, n=5, max_chars=400,
+            model_id=MODEL_ID, token=None):
     """Generate ``n`` preview clips into ``out_dir/preview`` and return their info.
 
     Source is ``texts=[...]`` or an HF ``dataset`` + ``text_column``.
     """
     pdir = Path(out_dir, "preview")
     pdir.mkdir(parents=True, exist_ok=True)
-    model = load_instance(model_id)
+    model = load_instance(model_id, precision)
     caches: dict = {}
     if texts is not None:
         source = ((i, t) for i, t in enumerate(texts))

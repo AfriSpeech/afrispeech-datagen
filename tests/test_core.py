@@ -57,6 +57,17 @@ def test_speakers_loaded():
         assert Path(SPEAKERS[g]["wav"]).exists()         # reference wav bundled
 
 
+def test_precision_and_instances():
+    from afrispeech_datagen import auto_instances
+    # CLI accepts the precision choices and a custom sample rate
+    a = cli.build_parser().parse_args(
+        ["--text-file", "s.txt", "--precision", "bf16", "--sample-rate", "24000"])
+    assert a.precision == "bf16" and a.sample_rate == 24000
+    assert cli.build_parser().parse_args([]).precision == "fp32"   # safe default
+    # auto_instances returns a sane count for each precision (1 here: no GPU)
+    assert auto_instances("fp32") >= 1 and auto_instances("fp16") >= 1
+
+
 def test_export_formats(tmp_path):
     import json
     from afrispeech_datagen import export_formats
