@@ -145,7 +145,7 @@ class _Run:
         self.errors = 0
         self.fatal = ""
         self.run_id = ""
-        self.audio_dir = ""
+        self.wav_dir = ""
         self.cfg_value = 2.0
         self.steps = 10
 
@@ -168,14 +168,15 @@ def _worker(run: _Run, model_id: str):
         try:
             wav = _generate_one(model, caches, text, gender, run.cfg_value, run.steps)
             dur = float(len(wav)) / SAMPLE_RATE
-            rel = f"audio/{idx:07d}_{run.run_id}.wav"
-            out = os.path.join(run.audio_dir, f"{idx:07d}_{run.run_id}.wav")
+            uid = f"{idx:07d}_{run.run_id}"          # filename stem == manifest id
+            rel = f"wavs/{uid}.wav"
+            out = os.path.join(run.wav_dir, f"{uid}.wav")
             tmp = out + ".tmp"
             sf.write(tmp, wav, SAMPLE_RATE, subtype="PCM_16")
             os.replace(tmp, out)
             with run.lock:
                 run.rows[str(idx)] = {
-                    "id": f"{run.run_id}_{idx:07d}", "file": rel, "text": text,
+                    "id": uid, "file": rel, "text": text,
                     "gender": gender, "speaker": gender, "duration": round(dur, 3),
                 }
                 run.total_seconds += dur
@@ -202,9 +203,10 @@ def _write_manifest(out_dir: str, run: _Run, meta: dict):
 
 def generate(
     *,
-    dataset: str,
-    text_column: str,
     out_dir: str,
+    dataset: str | None = None,
+    text_column: str | None = None,
+    texts: list | None = None,
     config: str | None = None,
     split: str = "train",
     target_hours: float = 1.0,
@@ -222,20 +224,22 @@ def generate(
 ):
     """Generate synthetic speech for a dataset into ``out_dir``.
 
-    Writes ``audio/*.wav`` (16 kHz mono), ``manifest.jsonl`` and ``progress.json``.
-    Resumes automatically if ``out_dir/progress.json`` exists (skips done rows).
-    ``on_clip(duration)`` fires per generated clip; ``progress(msg)`` for status.
-    Returns a summary dict.
+    Source is either an HF ``dataset`` (+ ``text_column``) or an in-memory list of
+    ``texts`` (one sentence each). Writes ``wavs/*.wav`` (16 kHz mono),
+    ``manifest.jsonl`` and ``progress.json``. Resumes automatically if
+    ``out_dir/progress.json`` exists (skips done rows). ``on_clip(seconds)`` fires
+    as clips land; ``progress(msg)`` for status. Returns a summary dict.
     """
-    from datasets import load_dataset
+    if texts is None and not (dataset and text_column):
+        raise ValueError("Provide either texts=[...] or dataset=... with text_column=...")
 
     out_dir = str(out_dir)
-    os.makedirs(os.path.join(out_dir, "audio"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir, "wavs"), exist_ok=True)
     target_seconds = max(0.0, float(target_hours)) * 3600
 
     run = _Run()
     run.cfg_value, run.steps = cfg_value, steps
-    run.audio_dir = os.path.join(out_dir, "audio")
+    run.wav_dir = os.path.join(out_dir, "wavs")
 
     # Resume from a prior progress.json in this folder.
     prog_path = Path(out_dir, "progress.json")
@@ -258,20 +262,27 @@ def generate(
     for w in workers:
         w.start()
 
-    meta = {"model_id": model_id, "dataset": dataset, "config": config or "",
-            "split": split, "text_column": text_column, "voices": voices,
-            "male_pct": male_pct, "target_hours": target_hours}
+    meta = {"model_id": model_id, "dataset": dataset or "(text-file)",
+            "config": config or "", "split": split, "text_column": text_column or "",
+            "voices": voices, "male_pct": male_pct, "target_hours": target_hours}
 
-    ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
+    # Source: a list of sentences, or a streamed HF dataset column.
+    if texts is not None:
+        source = ((i, t) for i, t in enumerate(texts))
+    else:
+        from datasets import load_dataset
+        ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
+        source = ((i, ex.get(text_column, "")) for i, ex in enumerate(ds))
+
     staged = 0
-    for idx, ex in enumerate(ds):
+    for idx, raw in source:
         if run.stop.is_set() or run.fatal:
             break
         if run.total_seconds >= target_seconds:
             break
         if str(idx) in run.rows:
             continue
-        text = clean_text(ex.get(text_column, ""))
+        text = clean_text(raw)
         if not (2 <= len(text) <= max_chars):
             continue
         gender = pick_gender(idx, voices, male_pct)
@@ -302,22 +313,28 @@ def generate(
             "errors": run.errors, "out_dir": out_dir, "run_id": run.run_id}
 
 
-def preview(*, dataset, text_column, out_dir, config=None, split="train",
-            voices="custom", male_pct=50, cfg_value=2.0, steps=10, n=5,
-            max_chars=400, model_id=MODEL_ID, token=None):
-    """Generate ``n`` preview clips into ``out_dir/preview`` and return their info."""
-    from datasets import load_dataset
+def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
+            split="train", voices="custom", male_pct=50, cfg_value=2.0, steps=10,
+            n=5, max_chars=400, model_id=MODEL_ID, token=None):
+    """Generate ``n`` preview clips into ``out_dir/preview`` and return their info.
 
+    Source is ``texts=[...]`` or an HF ``dataset`` + ``text_column``.
+    """
     pdir = Path(out_dir, "preview")
     pdir.mkdir(parents=True, exist_ok=True)
     model = load_instance(model_id)
     caches: dict = {}
-    ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
+    if texts is not None:
+        source = ((i, t) for i, t in enumerate(texts))
+    else:
+        from datasets import load_dataset
+        ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
+        source = ((i, ex.get(text_column, "")) for i, ex in enumerate(ds))
     out = []
-    for idx, ex in enumerate(ds):
+    for idx, raw in source:
         if len(out) >= n:
             break
-        text = clean_text(ex.get(text_column, ""))
+        text = clean_text(raw)
         if not (2 <= len(text) <= max_chars):
             continue
         gender = pick_gender(idx, voices, male_pct)
@@ -327,3 +344,63 @@ def preview(*, dataset, text_column, out_dir, config=None, split="train",
         out.append({"file": str(path), "gender": gender,
                     "duration": round(len(wav) / SAMPLE_RATE, 2), "text": text})
     return out
+
+
+# --------------------------------------------------------------------------- #
+# TTS-format manifests (written beside the generated wavs/)
+# --------------------------------------------------------------------------- #
+TTS_FORMATS = ("ljspeech", "piper", "vits", "melo")
+
+
+def _manifest_text(s: str) -> str:
+    # one record per line; '|' is the delimiter in every format
+    return s.replace("\r", " ").replace("\n", " ").replace("|", " ").strip()
+
+
+def export_formats(out_dir: str, formats, lang: str | None = None) -> list[str]:
+    """Write TTS-framework manifests for an existing run (beside its ``wavs/``).
+
+    Reads ``manifest.jsonl`` and emits, per requested format:
+      * ``ljspeech`` → ``metadata.csv``           ``id|text|text``
+      * ``piper``    → ``metadata.csv`` (or ``metadata.piper.csv`` if ljspeech too)
+                                                   ``id|speaker|text``
+      * ``vits``     → ``filelist.txt`` + ``speakers.txt``   ``wavs/<id>.wav|sid|text``
+      * ``melo``     → ``metadata.list``           ``wavs/<id>.wav|speaker|LANG|text``
+    Speaker = the row's gender. Returns the paths written.
+    """
+    out = Path(out_dir)
+    rows = []
+    with open(out / "manifest.jsonl", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    fmts = [f for f in formats if f in TTS_FORMATS]
+    written: list[str] = []
+
+    def _write(name, lines):
+        (out / name).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        written.append(str(out / name))
+
+    if "ljspeech" in fmts:
+        _write("metadata.csv",
+               [f"{r['id']}|{_manifest_text(r['text'])}|{_manifest_text(r['text'])}" for r in rows])
+    if "piper" in fmts:
+        name = "metadata.piper.csv" if "ljspeech" in fmts else "metadata.csv"
+        _write(name, [f"{r['id']}|{r.get('speaker', r.get('gender',''))}|{_manifest_text(r['text'])}"
+                      for r in rows])
+    if "vits" in fmts:
+        spk: dict[str, int] = {}
+        lines = []
+        for r in rows:
+            s = r.get("speaker", r.get("gender", "spk"))
+            sid = spk.setdefault(s, len(spk))
+            lines.append(f"{r['file']}|{sid}|{_manifest_text(r['text'])}")
+        _write("filelist.txt", lines)
+        _write("speakers.txt", [f"{i}\t{s}" for s, i in sorted(spk.items(), key=lambda kv: kv[1])])
+    if "melo" in fmts:
+        lc = (lang or "und").upper()
+        _write("metadata.list",
+               [f"{r['file']}|{r.get('speaker', r.get('gender',''))}|{lc}|{_manifest_text(r['text'])}"
+                for r in rows])
+    return written

@@ -32,51 +32,65 @@ pip install -e .                        # gives you the `afrispeech-datagen` com
 
 ## Quickstart
 
+Source is **either** an HF dataset column **or** a plain text file (one sentence
+per line). Output is written in your chosen **TTS format** (`--formats`).
+
 ```bash
-# 1) Preview 5 clips to hear the result before a big run
+# Preview 5 clips first (hear it before a big run)
 afrispeech-datagen --dataset ghananlpcommunity/your-text-dataset --text-column text --preview 5
 
-# 2) Generate 5 hours (50/50 male/female) into data/<name>
+# From an HF dataset → 5 h, LJSpeech layout (default), into data/<name>
 afrispeech-datagen --dataset ghananlpcommunity/your-text-dataset --text-column text \
-    --hours 5 --name twi-run
+    --hours 5 --name twi-run --formats ljspeech
 
-# 3) Resume: re-run the same command — finished rows are skipped
-# 4) Push the finished run to your own HF dataset repo
-afrispeech-datagen --dataset … --text-column text --hours 5 --name twi-run --push you/my-synth
+# From your own sentences (one per line) → a Piper dataset
+afrispeech-datagen --text-file sentences.txt --hours 2 --formats piper
+
+# Multiple formats at once, then push to your HF repo
+afrispeech-datagen --text-file sentences.txt --hours 2 --formats ljspeech,vits,melo \
+    --lang TWI --push you/my-synth
+
+# Resume: re-run the same command — finished rows are skipped
 ```
 
-Find a dataset's text column by inspecting it on the Hub, or list org datasets
-with `afrispeech-datagen --list-datasets`.
-
-## Output
+## Output — ready for your TTS trainer
 
 Everything lands in `data/<name>/` (override with `--out`):
 
 ```
 data/twi-run/
-  audio/<rowidx>_<runid>.wav   16 kHz mono, silence-trimmed
-  manifest.jsonl               id, file, text, gender, speaker, duration per row
-  progress.json                resume state (re-run to continue)
+  wavs/<id>.wav            16 kHz mono, silence-trimmed
+  manifest.jsonl           full info: id, file, text, gender, speaker, duration
+  progress.json            resume state (re-run to continue)
+  # + the manifest(s) for the formats you asked for:
+  metadata.csv             ljspeech  →  id|text|text
+  metadata.piper.csv       piper     →  id|speaker|text   (metadata.csv if piper only)
+  filelist.txt, speakers.txt   vits  →  wavs/<id>.wav|sid|text
+  metadata.list            melo      →  wavs/<id>.wav|speaker|LANG|text
 ```
 
-The manifest is LJSpeech-adjacent and easy to adapt to any TTS trainer.
+Point your framework's data-prep at this folder — `wavs/` + the matching manifest
+is exactly what LJSpeech/Coqui, Piper, VITS, and MeloTTS expect. The transcript is
+written verbatim (no normalisation — that's the framework's job).
 
 ## Options
 
 | flag | meaning |
 |------|---------|
-| `--dataset ID` | source text dataset on the HF Hub (required) |
-| `--text-column COL` | column holding the text (required) |
+| `--dataset ID` / `--text-column COL` | source: an HF dataset column |
+| `--text-file PATH` | source: a .txt file, one sentence per line |
 | `--config` / `--split` | dataset config / split (default split `train`) |
 | `--hours H` | target hours of audio to generate |
 | `--voices custom\|male\|female` | speaker selection (default `custom`) |
 | `--male-pct N` | %% male in `custom` mode (deterministic per row) |
 | `--max-chars N` | skip rows longer than this (default 400) |
 | `--instances N` | parallel model instances (default: auto by VRAM) |
-| `--cfg` / `--steps` | VoxCPM CFG value / inference timesteps |
+| `--cfg` / `--steps` | CFG value / inference timesteps |
+| `--formats …` | TTS manifests to write: `ljspeech,piper,vits,melo` (default `ljspeech`) |
+| `--lang CODE` | language code for the `melo` manifest |
 | `--name` / `--out` | run name (→ `data/<name>`) or explicit output dir |
 | `--push REPO [--private]` | upload the finished run to an HF dataset repo |
-| `--token` | HF token (else `HF_TOKEN` env) — needed for gated datasets/models |
+| `--token` | HF token (else `HF_TOKEN` env) — for gated datasets/models |
 | `--preview N` | generate N preview clips and exit |
 | `--list-datasets` | list datasets under the AfriSpeech org |
 
@@ -86,11 +100,12 @@ re-run the same command) and it reads `progress.json` and skips finished rows.
 ## Use as a library
 
 ```python
-from afrispeech_datagen import generate, preview
+from afrispeech_datagen import generate, export_formats
 
-preview(dataset="org/ds", text_column="text", out_dir="data/run", n=5)
-summary = generate(dataset="org/ds", text_column="text", out_dir="data/run",
+# From an HF dataset column, or pass texts=[...] for your own sentences
+summary = generate(out_dir="data/run", dataset="org/ds", text_column="text",
                    target_hours=5, voices="custom", male_pct=50)
+export_formats("data/run", ["ljspeech", "vits"], lang="TWI")
 print(summary)   # {'rows': ..., 'hours': ..., 'errors': ..., 'out_dir': ..., 'run_id': ...}
 ```
 
@@ -106,7 +121,7 @@ pytest tests/        # GPU-free helpers + CLI parsing
 ```
 afrispeech_datagen/
   cli.py             the `afrispeech-datagen` command
-  generator.py       model load, voice-clone, silence-trim, parallel run, resume
+  generator.py       voice-clone, silence-trim, parallel run, resume, TTS-format export
   speakers/          built-in male/female reference wav + text
 notebooks/afrispeech_datagen.ipynb   Colab/Kaggle (GPU) runner
 tests/

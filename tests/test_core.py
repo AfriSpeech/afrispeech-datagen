@@ -57,17 +57,50 @@ def test_speakers_loaded():
         assert Path(SPEAKERS[g]["wav"]).exists()         # reference wav bundled
 
 
+def test_export_formats(tmp_path):
+    import json
+    from afrispeech_datagen import export_formats
+
+    run = tmp_path / "run"
+    (run / "wavs").mkdir(parents=True)
+    rows = [
+        {"id": "0000000_ab", "file": "wavs/0000000_ab.wav", "text": "hello there",
+         "gender": "male", "speaker": "male", "duration": 1.2},
+        {"id": "0000001_ab", "file": "wavs/0000001_ab.wav", "text": "good morning",
+         "gender": "female", "speaker": "female", "duration": 1.0},
+    ]
+    (run / "manifest.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    export_formats(str(run), ["ljspeech", "piper", "vits", "melo"], lang="twi")
+
+    assert (run / "metadata.csv").read_text().splitlines()[0].split("|") == \
+        ["0000000_ab", "hello there", "hello there"]                 # ljspeech
+    assert (run / "metadata.piper.csv").read_text().splitlines()[0].split("|") == \
+        ["0000000_ab", "male", "hello there"]                        # piper (renamed)
+    assert (run / "filelist.txt").read_text().splitlines()[0].startswith(
+        "wavs/0000000_ab.wav|0|")                                    # vits
+    assert (run / "speakers.txt").exists()
+    ml = (run / "metadata.list").read_text().splitlines()[0].split("|")
+    assert ml[0] == "wavs/0000000_ab.wav" and ml[2] == "TWI"          # melo
+
+
 def test_cli_parser_and_requirements():
     a = cli.build_parser().parse_args(
         ["--dataset", "org/ds", "--text-column", "text", "--hours", "5",
-         "--voices", "custom", "--male-pct", "60", "--name", "run1"])
+         "--voices", "custom", "--male-pct", "60", "--name", "run1",
+         "--formats", "piper,vits"])
     assert a.dataset == "org/ds" and a.text_column == "text"
     assert a.hours == 5 and a.voices == "custom" and a.male_pct == 60
+    assert a.formats == "piper,vits"
 
-    # dataset + text-column required for a run
+    # --text-file is an accepted alternative source
+    assert cli.build_parser().parse_args(["--text-file", "s.txt"]).text_file == "s.txt"
+
+    # a source is required for a run
     try:
         cli.main(["--split", "train"])
     except SystemExit as e:
-        assert "required" in str(e)
+        assert "text-file" in str(e) or "dataset" in str(e)
     else:
-        raise AssertionError("expected SystemExit without --dataset/--text-column")
+        raise AssertionError("expected SystemExit without a source")

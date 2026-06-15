@@ -9,10 +9,13 @@ Generate synthetic TTS training data from a text dataset, locally. Examples:
     afrispeech-datagen --dataset ghananlpcommunity/some-text --text-column text \\
         --hours 5 --name twi-run
 
+    # From your own sentences (one per line), as a Piper dataset
+    afrispeech-datagen --text-file sentences.txt --hours 2 --formats piper
+
     # Resume: just re-run the same command (skips finished rows)
     # Push the result to an HF dataset repo when done
     afrispeech-datagen --dataset … --text-column text --hours 5 --name twi-run \\
-        --push you/my-synth
+        --formats ljspeech,vits --push you/my-synth
 """
 
 from __future__ import annotations
@@ -31,11 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="afrispeech-datagen", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    src = p.add_argument_group("source")
+    src = p.add_argument_group("source (use --dataset OR --text-file)")
     src.add_argument("--dataset", help="source text dataset id on the HF Hub")
     src.add_argument("--config", help="dataset config (optional)")
     src.add_argument("--split", default="train")
-    src.add_argument("--text-column", help="column holding the text to synthesise")
+    src.add_argument("--text-column", help="column holding the text (with --dataset)")
+    src.add_argument("--text-file", help="path to a .txt file with one sentence per line")
     src.add_argument("--max-chars", type=int, default=400, help="skip rows longer than this")
 
     gen = p.add_argument_group("generation")
@@ -50,6 +54,9 @@ def build_parser() -> argparse.ArgumentParser:
     out = p.add_argument_group("output")
     out.add_argument("--out", help="output directory (default: data/<name>)")
     out.add_argument("--name", help="run name (folder under data/; enables resume)")
+    out.add_argument("--formats", default="ljspeech",
+                     help="TTS manifests to write (comma list): ljspeech,piper,vits,melo")
+    out.add_argument("--lang", help="language code for the melo manifest (e.g. TWI)")
     out.add_argument("--save-every", type=int, default=200, help="write manifest every N rows")
     out.add_argument("--push", metavar="REPO_ID", help="upload the result to this HF dataset repo")
     out.add_argument("--private", action="store_true", help="make the pushed repo private")
@@ -73,18 +80,26 @@ def main(argv: list[str] | None = None) -> int:
         print("\n".join(ids) if ids else f"(no datasets found under {DATASET_ORG})")
         return 0
 
-    if not args.dataset or not args.text_column:
-        sys.exit("Both --dataset and --text-column are required (see --help).")
+    # ---- resolve source: a text file, or an HF dataset column ------------- #
+    texts = None
+    if args.text_file:
+        texts = [ln.strip() for ln in open(args.text_file, encoding="utf-8") if ln.strip()]
+        default_name = sanitize_name(os.path.splitext(os.path.basename(args.text_file))[0])
+    elif args.dataset and args.text_column:
+        default_name = sanitize_name(args.dataset.split("/")[-1])
+    else:
+        sys.exit("Provide --text-file PATH, or --dataset ID with --text-column COL (see --help).")
 
     from . import generator
+
+    name = args.name or default_name
+    out_dir = args.out or os.path.join("data", name)
 
     # ---- preview ---------------------------------------------------------- #
     if args.preview:
         print(f"Generating {args.preview} preview clip(s)…", file=sys.stderr)
-        name = args.name or sanitize_name(args.dataset.split("/")[-1])
-        out_dir = args.out or os.path.join("data", name)
         clips = generator.preview(
-            dataset=args.dataset, text_column=args.text_column, out_dir=out_dir,
+            out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
             config=args.config, split=args.split, voices=args.voices, male_pct=args.male_pct,
             cfg_value=args.cfg_value, steps=args.steps, n=args.preview,
             max_chars=args.max_chars, model_id=args.model, token=args.token,
@@ -94,9 +109,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ---- full run --------------------------------------------------------- #
-    name = args.name or sanitize_name(args.dataset.split("/")[-1])
-    out_dir = args.out or os.path.join("data", name)
-
     from tqdm.auto import tqdm
     bar = tqdm(total=round(args.hours * 3600), unit="s", unit_scale=False,
                desc="Synthesising audio", file=sys.stderr)
@@ -109,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
             state["last"] = total_sec
 
     summary = generator.generate(
-        dataset=args.dataset, text_column=args.text_column, out_dir=out_dir,
+        out_dir=out_dir, dataset=args.dataset, text_column=args.text_column, texts=texts,
         config=args.config, split=args.split, target_hours=args.hours,
         voices=args.voices, male_pct=args.male_pct, instances=args.instances,
         cfg_value=args.cfg_value, steps=args.steps, max_chars=args.max_chars,
@@ -118,9 +130,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     bar.close()
 
+    # ---- TTS-format manifests --------------------------------------------- #
+    fmts = [f.strip() for f in (args.formats or "").split(",") if f.strip()]
+    written = generator.export_formats(out_dir, fmts, lang=args.lang) if fmts else []
+
     print(f"\n✅ {summary['rows']} clips · {summary['hours']:.2f} h "
           f"({summary['errors']} errors) → {summary['out_dir']}", file=sys.stderr)
-    print(f"   audio/  manifest.jsonl  progress.json", file=sys.stderr)
+    print("   wavs/  manifest.jsonl  progress.json"
+          + ("  " + "  ".join(os.path.basename(w) for w in written) if written else ""),
+          file=sys.stderr)
 
     if args.push:
         from huggingface_hub import HfApi, create_repo
