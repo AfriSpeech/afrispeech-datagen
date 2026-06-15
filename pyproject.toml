@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "voxcpm-synth"
+name = "afrispeech-datagen"
 version = "0.1.0"
 description = "Generate synthetic TTS training data from text datasets with the AfriSpeech VoxCPM model — voice-cloned male/female speakers, parallel instances, resume."
 readme = "README.md"
@@ -29,10 +29,10 @@ dependencies = [
 ]
 
 [project.scripts]
-voxcpm-synth = "voxcpm_synth.cli:main"
+afrispeech-datagen = "afrispeech_datagen.cli:main"
 
 [tool.setuptools]
-packages = ["voxcpm_synth"]
+packages = ["afrispeech_datagen"]
 
 [tool.setuptools.package-data]
-voxcpm_synth = ["speakers/*.wav", "speakers/*.txt"]
+afrispeech_datagen = ["speakers/*.wav", "speakers/*.txt"]

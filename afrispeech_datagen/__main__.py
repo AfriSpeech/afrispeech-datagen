@@ -1,4 +1,4 @@
-"""Enable `python -m voxcpm_synth ...` as an alias for the CLI."""
+"""Enable `python -m afrispeech_datagen ...` as an alias for the CLI."""
 
 from .cli import main
 

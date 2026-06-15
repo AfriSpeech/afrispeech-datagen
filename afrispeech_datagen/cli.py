@@ -3,15 +3,15 @@
 Generate synthetic TTS training data from a text dataset, locally. Examples:
 
     # Preview 5 clips before a big run (needs a GPU)
-    voxcpm-synth --dataset ghananlpcommunity/some-text --text-column text --preview 5
+    afrispeech-datagen --dataset ghananlpcommunity/some-text --text-column text --preview 5
 
     # Generate 5 hours, 50/50 male/female, into data/<name>
-    voxcpm-synth --dataset ghananlpcommunity/some-text --text-column text \\
+    afrispeech-datagen --dataset ghananlpcommunity/some-text --text-column text \\
         --hours 5 --name twi-run
 
     # Resume: just re-run the same command (skips finished rows)
     # Push the result to an HF dataset repo when done
-    voxcpm-synth --dataset … --text-column text --hours 5 --name twi-run \\
+    afrispeech-datagen --dataset … --text-column text --hours 5 --name twi-run \\
         --push you/my-synth
 """
 
@@ -28,7 +28,7 @@ DATASET_ORG = "AfriSpeech"
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="voxcpm-synth", description=__doc__,
+        prog="afrispeech-datagen", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     src = p.add_argument_group("source")

@@ -7,8 +7,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from voxcpm_synth import clean_text, pick_gender, sanitize_name, trim_silences, SPEAKERS
-from voxcpm_synth import cli
+from afrispeech_datagen import clean_text, pick_gender, sanitize_name, trim_silences, SPEAKERS
+from afrispeech_datagen import cli
 
 
 def test_clean_text():
