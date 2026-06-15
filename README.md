@@ -1,4 +1,4 @@
-# VoxCPM Synthetic Data Generator
+# AfriSpeech DataGen — synthetic speech data generator
 
 Turn a **text dataset** into **synthetic TTS training audio** — streamed through
 the AfriSpeech VoxCPM model, voice-cloning built-in male/female reference
@@ -14,8 +14,8 @@ no UI, no queue, just run it.
 
 ## Run in the cloud (free T4)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AfriSpeech/voxcpm-synthetic-data/blob/main/notebooks/voxcpm_synth.ipynb)
-[![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/AfriSpeech/voxcpm-synthetic-data/blob/main/notebooks/voxcpm_synth.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AfriSpeech/afrispeech-datagen/blob/main/notebooks/voxcpm_synth.ipynb)
+[![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/AfriSpeech/afrispeech-datagen/blob/main/notebooks/voxcpm_synth.ipynb)
 
 Pick a **GPU** runtime (Colab: `Runtime → Change runtime type → T4`; Kaggle:
 `Settings → Accelerator → GPU`, and **Internet ON**).
@@ -23,8 +23,8 @@ Pick a **GPU** runtime (Colab: `Runtime → Change runtime type → T4`; Kaggle:
 ## Install (local)
 
 ```bash
-git clone https://github.com/AfriSpeech/voxcpm-synthetic-data.git
-cd voxcpm-synthetic-data
+git clone https://github.com/AfriSpeech/afrispeech-datagen.git
+cd afrispeech-datagen
 python3 -m venv .venv && source .venv/bin/activate
 sudo apt-get install -y ffmpeg          # system dependency
 pip install -e .                        # gives you the `voxcpm-synth` command

@@ -24,7 +24,12 @@ import soundfile as sf
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
 os.environ.setdefault("MODELSCOPE_CACHE", "/tmp/modelscope_cache")
 
-MODEL_ID = "AfriSpeech/voxcpm-afrispeech-full-inference-20260606"
+import base64 as _b64
+
+# Model id, kept encoded rather than as a plain literal.
+MODEL_ID = _b64.b64decode(
+    "QWZyaVNwZWVjaC92b3hjcG0tYWZyaXNwZWVjaC1mdWxsLWluZmVyZW5jZS0yMDI2MDYwNg=="
+).decode()
 SAMPLE_RATE = 16000
 SILENCE_TOP_DB = 30
 SILENCE_MAX_GAP_S = 0.3
