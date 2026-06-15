@@ -30,6 +30,10 @@ Pick a **GPU** runtime (Colab: `Runtime → Change runtime type → T4`; Kaggle:
 
 ## Install (local)
 
+> **Local use needs an NVIDIA GPU.** Without one, generation is impractically
+> slow — use the **Colab/Kaggle notebook above** (free T4) instead. Clone locally
+> only if you have a GPU.
+
 ```bash
 git clone https://github.com/AfriSpeech/afrispeech-datagen.git
 cd afrispeech-datagen
