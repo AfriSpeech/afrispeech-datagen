@@ -220,9 +220,18 @@ class _Run:
         self.precision = "fp32"
 
 
+# Serialize model construction across worker threads. Loading several
+# OmniVoice instances concurrently corrupts the heap ("free(): corrupted
+# unsorted chunks") — the native weight-loading / tokenizer extensions aren't
+# thread-safe under parallel construction, and N simultaneous staging buffers
+# also spike CPU RAM. Load one at a time; generation still runs in parallel.
+_LOAD_LOCK = threading.Lock()
+
+
 def _worker(run: _Run, model_id: str):
     try:
-        model = load_instance(model_id, run.precision)
+        with _LOAD_LOCK:
+            model = load_instance(model_id, run.precision)
     except Exception as e:  # noqa: BLE001
         run.fatal = run.fatal or f"model load failed: {e}"
         run.stop.set()
