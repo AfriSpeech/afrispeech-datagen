@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "afrispeech-datagen"
 version = "0.1.0"
-description = "Generate synthetic TTS training data from text datasets with the AfriSpeech VoxCPM model — voice-cloned male/female speakers, parallel instances, resume."
+description = "Generate synthetic TTS training data from text datasets with OmniVoice — voice-cloned male/female speakers, parallel instances, resume."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "CC-BY-4.0" }
 dependencies = [
-    "voxcpm",
+    "omnivoice @ git+https://github.com/k2-fsa/OmniVoice.git",
     "datasets>=2.19",
     "huggingface_hub>=0.23",
     "soundfile>=0.12",
@@ -23,9 +23,6 @@ dependencies = [
     "transformers",
     "tokenizers",
     "accelerate",
-    "sentencepiece",
-    "modelscope",
-    "funasr",
 ]
 
 [project.scripts]
