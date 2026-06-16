@@ -20,7 +20,10 @@ dependencies = [
     "tqdm",
     "torch",
     "torchaudio",
-    "transformers",
+    # omnivoice needs transformers 5.x; pin to a release that exposes both
+    # AutoFeatureExtractor and HiggsAudioV2TokenizerModel at the top level
+    # (some intermediate 5.x releases dropped AutoFeatureExtractor).
+    "transformers==5.7.0",
     "tokenizers",
     "accelerate",
 ]

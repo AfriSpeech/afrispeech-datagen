@@ -10,6 +10,6 @@ scipy
 tqdm
 torch
 torchaudio
-transformers
+transformers==5.7.0   # 5.x for omnivoice; this release exposes AutoFeatureExtractor + HiggsAudioV2TokenizerModel
 tokenizers
 accelerate
