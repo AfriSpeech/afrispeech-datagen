@@ -210,6 +210,7 @@ class _Run:
         self.rows: dict[str, dict] = {}
         self.total_seconds = 0.0
         self.errors = 0
+        self.first_error = ""
         self.fatal = ""
         self.run_id = ""
         self.wav_dir = ""
@@ -253,6 +254,9 @@ def _worker(run: _Run, model_id: str):
         except Exception as e:  # noqa: BLE001
             with run.lock:
                 run.errors += 1
+                if not run.first_error:
+                    import traceback
+                    run.first_error = traceback.format_exc()
         finally:
             run.q.task_done()
 
@@ -391,8 +395,12 @@ def generate(
 
     if run.fatal:
         raise RuntimeError(run.fatal)
+    if run.errors and not run.rows and run.first_error:
+        import sys
+        print("\nAll rows failed. First error:\n" + run.first_error, file=sys.stderr)
     return {"rows": len(run.rows), "hours": run.total_seconds / 3600,
-            "errors": run.errors, "out_dir": out_dir, "run_id": run.run_id}
+            "errors": run.errors, "out_dir": out_dir, "run_id": run.run_id,
+            "first_error": run.first_error}
 
 
 def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
