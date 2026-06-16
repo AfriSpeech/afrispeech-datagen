@@ -1,8 +1,11 @@
-"""Command-line interface for the VoxCPM synthetic-speech generator.
+"""Command-line interface for the OmniVoice synthetic-speech generator.
 
-Generate synthetic TTS training data from a text dataset, locally. Examples:
+Generate synthetic TTS training data from a text dataset, locally.
+Uses GPU automatically when CUDA is available; falls back to CPU.
 
-    # Preview 5 clips before a big run (needs a GPU)
+Examples:
+
+    # Preview 5 clips
     afrispeech-datagen --dataset ghananlpcommunity/some-text --text-column text --preview 5
 
     # Generate 5 hours, 50/50 male/female, into data/<name>
@@ -58,9 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "bf16 ≈ half VRAM, more stable than fp16, but needs an Ampere+ "
                           "GPU (A100/L4/H100) — NOT a T4.")
     gen.add_argument("--instances", type=int, help="parallel model instances (default: auto by VRAM)")
-    gen.add_argument("--cfg", type=float, default=2.0, dest="cfg_value", help="CFG value")
-    gen.add_argument("--steps", type=int, default=10, help="inference timesteps")
-    gen.add_argument("--model", default=MODEL_ID, help="VoxCPM model id")
+    gen.add_argument("--cfg", type=float, default=2.0, dest="cfg_value", help="CFG guidance scale")
+    gen.add_argument("--steps", type=int, default=32,
+                     help="MaskGIT decoding steps (default 32; use 16 for faster lower-quality)")
+    gen.add_argument("--model", default=MODEL_ID,
+                     help="OmniVoice model id on HF Hub (default: k2-fsa/OmniVoice)")
 
     out = p.add_argument_group("output")
     out.add_argument("--out", help="output directory (default: data/<name>)")

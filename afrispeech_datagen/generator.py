@@ -1,9 +1,9 @@
-"""Core synthetic-speech generation with VoxCPM (voice-cloned male/female).
+"""Core synthetic-speech generation with OmniVoice (voice-cloned male/female).
 
-Streams a text dataset, synthesises each row with the AfriSpeech VoxCPM model
-using the built-in male/female reference speakers, trims silence, and writes
-WAVs at the chosen sample rate + a manifest locally. Supports parallel model instances,
-a target-hours budget, and resume.
+Streams a text dataset, synthesises each row with OmniVoice using the built-in
+male/female reference speakers, trims silence, and writes WAVs at the chosen
+sample rate + a manifest locally. Supports parallel model instances, a
+target-hours budget, and resume. Runs on GPU automatically; falls back to CPU.
 """
 
 from __future__ import annotations
@@ -21,11 +21,10 @@ import numpy as np
 import soundfile as sf
 
 os.environ.setdefault("TORCHDYNAMO_DISABLE", "1")
-os.environ.setdefault("MODELSCOPE_CACHE", "/tmp/modelscope_cache")
 
-MODEL_ID = "AfriSpeech/voxcpm-afrispeech-full-inference-20260606"
-SAMPLE_RATE = 16000      # native rate the model synthesises at
-DEFAULT_SR = 22050       # default OUTPUT rate (TTS-friendly); override with --sample-rate
+MODEL_ID = "k2-fsa/OmniVoice"
+SAMPLE_RATE = 24000      # native rate OmniVoice synthesises at
+DEFAULT_SR = 24000       # default OUTPUT rate; override with --sample-rate
 SILENCE_TOP_DB = 30
 SILENCE_MAX_GAP_S = 0.3
 
@@ -91,8 +90,8 @@ def resample(wav, src_sr: int, dst_sr: int):
 
 
 def auto_instances(precision: str = "fp32") -> int:
-    """Parallel model instances that fit in VRAM (~4.5 GB fp32, ~2.5 GB half)."""
-    per = 2.5 if precision in ("fp16", "bf16") else 4.5
+    """Parallel model instances that fit in VRAM (~3 GB fp32, ~2 GB fp16/bf16)."""
+    per = 2.0 if precision in ("fp16", "bf16") else 3.0
     try:
         import torch
         if not torch.cuda.is_available():
@@ -106,60 +105,39 @@ def auto_instances(precision: str = "fp32") -> int:
 # --------------------------------------------------------------------------- #
 # Model
 # --------------------------------------------------------------------------- #
-def _cast_model(model, dt) -> None:
-    """Best-effort cast of the model's torch modules to ``dt`` (fp16/bf16)."""
+def _resolve_device_and_dtype(precision: str):
     import torch
-    cast = False
-    for obj in (model, getattr(model, "tts_model", None)):
-        if obj is None:
-            continue
-        if isinstance(obj, torch.nn.Module):
-            obj.to(dt)
-            cast = True
-        else:
-            for v in vars(obj).values():
-                if isinstance(v, torch.nn.Module):
-                    v.to(dt)
-                    cast = True
-    if not cast:
-        raise RuntimeError("could not apply half precision to this model build; use --precision fp32")
+    cuda = torch.cuda.is_available()
+    device = "cuda" if cuda else "cpu"
+    dtype_map = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}
+    dtype = dtype_map.get(precision, torch.float32)
+    if precision == "bf16" and cuda and not torch.cuda.is_bf16_supported():
+        raise RuntimeError("bf16 needs an Ampere+ GPU (A100/L4/H100…); "
+                           "use --precision fp16 or fp32.")
+    return device, dtype
 
 
 def load_instance(model_id: str = MODEL_ID, precision: str = "fp32"):
-    from voxcpm import VoxCPM
-    try:
-        model = VoxCPM.from_pretrained(model_id, load_denoiser=False)
-    except TypeError:
-        model = VoxCPM.from_pretrained(model_id)
-    if precision in ("fp16", "bf16"):
-        import torch
-        if precision == "bf16" and not (torch.cuda.is_available() and torch.cuda.is_bf16_supported()):
-            raise RuntimeError("bf16 needs an Ampere+ GPU (A100/L4/H100…); not available here. "
-                               "Use --precision fp16 or fp32.")
-        _cast_model(model, torch.float16 if precision == "fp16" else torch.bfloat16)
-    return model
+    from omnivoice import OmniVoice
+    device, dtype = _resolve_device_and_dtype(precision)
+    return OmniVoice.from_pretrained(model_id, device_map=device, dtype=dtype)
 
 
 def _generate_one(model, caches: dict, text: str, gender: str,
                   cfg_value: float, steps: int) -> np.ndarray:
     if gender not in caches:
         sp = SPEAKERS[gender]
-        caches[gender] = model.tts_model.build_prompt_cache(
-            prompt_text=sp["text"], prompt_wav_path=sp["wav"]
+        caches[gender] = model.create_voice_clone_prompt(
+            ref_audio=sp["wav"], ref_text=sp["text"]
         )
-    wav, _, _ = model.tts_model.generate_with_prompt_cache(
-        target_text=text,
-        prompt_cache=caches[gender],
-        max_len=4096,
-        cfg_value=float(cfg_value),
-        inference_timesteps=int(steps),
-        retry_badcase=True,
-        retry_badcase_max_times=3,
-        retry_badcase_ratio_threshold=6.0,
+    audios = model.generate(
+        text=text,
+        voice_clone_prompt=caches[gender],
+        num_step=int(steps),
+        guidance_scale=float(cfg_value),
     )
-    if hasattr(wav, "cpu"):
-        wav = wav.squeeze(0).cpu().numpy()
-    return trim_silences(wav)
+    wav = audios[0].squeeze(0).cpu().numpy()
+    return trim_silences(wav, sr=SAMPLE_RATE)
 
 
 # --------------------------------------------------------------------------- #
@@ -251,7 +229,7 @@ def generate(
     precision: str = "fp32",
     instances: int | None = None,
     cfg_value: float = 2.0,
-    steps: int = 10,
+    steps: int = 32,
     max_chars: int = 400,
     model_id: str = MODEL_ID,
     token: str | None = None,
@@ -312,7 +290,8 @@ def generate(
     else:
         from datasets import load_dataset
         ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
-        source = ((i, ex.get(text_column, "")) for i, ex in enumerate(ds))
+        ds = ds.select_columns([text_column])
+        source = ((i, ex[text_column]) for i, ex in enumerate(ds))
 
     staged = 0
     accepted = len(run.rows)          # rows already done (resume) count toward --max-samples
@@ -359,7 +338,7 @@ def generate(
 
 def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
             split="train", voices="custom", male_pct=50, sample_rate=DEFAULT_SR,
-            precision="fp32", cfg_value=2.0, steps=10, n=5, max_chars=400,
+            precision="fp32", cfg_value=2.0, steps=32, n=5, max_chars=400,
             model_id=MODEL_ID, token=None):
     """Generate ``n`` preview clips into ``out_dir/preview`` and return their info.
 
@@ -374,7 +353,8 @@ def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
     else:
         from datasets import load_dataset
         ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
-        source = ((i, ex.get(text_column, "")) for i, ex in enumerate(ds))
+        ds = ds.select_columns([text_column])
+        source = ((i, ex[text_column]) for i, ex in enumerate(ds))
     out = []
     for idx, raw in source:
         if len(out) >= n:
