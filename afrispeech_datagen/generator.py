@@ -37,16 +37,36 @@ for _g, _s in SPEAKERS.items():
     _s["text"] = Path(_s["txt"]).read_text(encoding="utf-8").strip()
 
 
+def _rebind_transformers_attr(name: str, sources: list[tuple[str, str]]) -> None:
+    """Re-expose ``transformers.<name>`` from a submodule onto the top level.
+
+    transformers 5.x reorganised its top-level namespace, dropping symbols that
+    other libraries (and omnivoice itself) still import as ``from transformers
+    import <name>``. The classes still live in their submodules, so we re-bind
+    them onto the top-level package. We bind unconditionally (rather than guard
+    with ``hasattr``): the lazy top-level loader raises ImportError — not
+    AttributeError — for a dropped name, so ``hasattr`` is unreliable here. If
+    the name already resolves, we just rebind it to the same object; if no
+    source is importable, this is a no-op and the original error stands.
+    """
+    import importlib
+    import transformers
+    for module_path, attr in sources:
+        try:
+            mod = importlib.import_module(module_path)
+            setattr(transformers, name, getattr(mod, attr))
+            return
+        except Exception:
+            continue
+
+
 def _patch_transformers_for_datasets() -> None:
     """Restore ``transformers.PreTrainedTokenizerBase`` for older ``datasets``.
 
     omnivoice pulls in transformers 5.x, which dropped that symbol from the
     top-level namespace. The ``datasets`` dill-hashing code references it
-    unconditionally (``transformers.PreTrainedTokenizerBase``) while hashing a
-    dataset's ``data_files``, so ``load_dataset`` raises AttributeError. Re-bind
-    the attribute (to the real class if reachable, else a harmless stand-in —
-    our data_files never subclass it, so the issubclass check is False either
-    way) before any dataset load.
+    unconditionally while hashing a dataset's ``data_files``, so
+    ``load_dataset`` raises AttributeError. Re-bind it before any dataset load.
     """
     import transformers
     if hasattr(transformers, "PreTrainedTokenizerBase"):
@@ -57,6 +77,19 @@ def _patch_transformers_for_datasets() -> None:
         class PreTrainedTokenizerBase:  # stand-in; never matched by data_files
             pass
     transformers.PreTrainedTokenizerBase = PreTrainedTokenizerBase
+
+
+def _patch_transformers_for_omnivoice() -> None:
+    """Restore top-level symbols omnivoice imports from ``transformers``.
+
+    Depending on the installed transformers 5.x point release, ``AutoFeatureExtractor``
+    (and friends) may not be exposed at the top level even though the class
+    still lives in its submodule. Re-bind before importing omnivoice.
+    """
+    _rebind_transformers_attr("AutoFeatureExtractor", [
+        ("transformers.models.auto.feature_extraction_auto", "AutoFeatureExtractor"),
+        ("transformers.models.auto", "AutoFeatureExtractor"),
+    ])
 
 
 # --------------------------------------------------------------------------- #
@@ -140,6 +173,7 @@ def _resolve_device_and_dtype(precision: str):
 
 
 def load_instance(model_id: str = MODEL_ID, precision: str = "fp32"):
+    _patch_transformers_for_omnivoice()
     from omnivoice import OmniVoice
     device, dtype = _resolve_device_and_dtype(precision)
     return OmniVoice.from_pretrained(model_id, device_map=device, dtype=dtype)
