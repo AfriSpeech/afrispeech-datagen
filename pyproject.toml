@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "CC-BY-4.0" }
 dependencies = [
-    "omnivoice @ git+https://github.com/k2-fsa/OmniVoice.git",
+    "omnivoice @ git+https://github.com/groxaxo/omnivoice-streaming.git",
     "datasets>=2.19",
     "huggingface_hub>=0.23",
     "soundfile>=0.12",
