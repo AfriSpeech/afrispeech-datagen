@@ -136,7 +136,9 @@ def _generate_one(model, caches: dict, text: str, gender: str,
         num_step=int(steps),
         guidance_scale=float(cfg_value),
     )
-    wav = audios[0].squeeze(0).cpu().numpy()
+    wav = audios[0].cpu().numpy()
+    if wav.ndim == 2:
+        wav = wav[0]  # (C, T) → (T,)
     return trim_silences(wav, sr=SAMPLE_RATE)
 
 
