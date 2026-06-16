@@ -243,7 +243,7 @@ def _worker(run: _Run, model_id: str):
             rel = f"wavs/{uid}.wav"
             out = os.path.join(run.wav_dir, f"{uid}.wav")
             tmp = out + ".tmp"
-            sf.write(tmp, wav, run.sample_rate, subtype="PCM_16")
+            sf.write(tmp, wav, run.sample_rate, subtype="PCM_16", format="WAV")
             os.replace(tmp, out)
             with run.lock:
                 run.rows[str(idx)] = {
