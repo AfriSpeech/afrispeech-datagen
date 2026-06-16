@@ -1,38 +1,32 @@
 # AfriSpeech DataGen — synthetic speech data generator
 
 Turn a **text dataset** into **synthetic TTS training audio** — streamed through
-the AfriSpeech VoxCPM model, voice-cloning built-in male/female reference
-speakers. It writes WAVs (resampled to your target rate) + a manifest locally, runs multiple model
-instances in parallel, and resumes where it left off.
+[OmniVoice](https://huggingface.co/k2-fsa/OmniVoice), voice-cloning built-in
+male/female reference speakers. It writes WAVs (resampled to your target rate)
++ a manifest locally, runs multiple model instances in parallel, and resumes
+where it left off.
 
-> **A GPU is required** for usable speed (VoxCPM is a neural TTS model; ~4.5 GB
-> VRAM per instance). A T4 works; bigger GPUs run more instances in parallel.
+> **GPU recommended** for speed — OmniVoice auto-detects CUDA and falls back to
+> CPU if none is available (~3 GB VRAM per instance in fp32, ~2 GB in fp16).
+> A T4 fits 4 instances (fp32) or 6 (fp16).
 
 ## Supported languages
 
-The model can synthesise **50 languages** — give it text in any of them:
-
-> Afar, Akan (Twi), Amharic, Baoule, Bemba, Burkina Faso Fulfulde, Dan, Ewe, Fon,
-> Fulani, Ganda (Luganda), Hausa, Igbo, Jola-Kasa, Kalanga, Kalenjin, Kikuyu,
-> Lingala, Lozi, Luba-Lulua, Makhuwa-Shirima, Malgache, Mankanya, Mbunda, Mende,
-> Mossi, Ngambay, Northeastern Dinka, Nyanja, Oromo (Borana-Arsi-Guji), Pular,
-> Punu, Rundi (Kirundi), Rwandan (Kinyarwanda), Sango, Shilluk, Shona, Somali,
-> Sukuma, Swahili, Tarifit, Tashelhayt, Tigrinya, Tiv, Tumbuka, West Central
-> Oromo, Western Niger Fulfulde, Wolof, Yaka, Yoruba.
+OmniVoice can synthesise **646 languages**. Feed it text in any of them — the
+model handles language detection automatically. For best results, pass
+`--lang` when pushing a MeloTTS manifest (for the metadata label), but
+generation itself is language-agnostic.
 
 ## Run in the cloud (free T4)
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/AfriSpeech/afrispeech-datagen/blob/main/notebooks/afrispeech_datagen.ipynb)
 [![Open in Kaggle](https://kaggle.com/static/images/open-in-kaggle.svg)](https://kaggle.com/kernels/welcome?src=https://github.com/AfriSpeech/afrispeech-datagen/blob/main/notebooks/afrispeech_datagen.ipynb)
 
-Pick a **GPU** runtime (Colab: `Runtime → Change runtime type → T4`; Kaggle:
-`Settings → Accelerator → GPU`, and **Internet ON**).
+Pick a **GPU** runtime for full speed (Colab: `Runtime → Change runtime type → T4`;
+Kaggle: `Settings → Accelerator → GPU`, and **Internet ON**). The notebook runs
+on CPU too — just slower.
 
 ## Install (local)
-
-> **Local use needs an NVIDIA GPU.** Without one, generation is impractically
-> slow — use the **Colab/Kaggle notebook above** (free T4) instead. Clone locally
-> only if you have a GPU.
 
 ```bash
 git clone https://github.com/AfriSpeech/afrispeech-datagen.git
@@ -41,6 +35,8 @@ python3 -m venv .venv && source .venv/bin/activate
 sudo apt-get install -y ffmpeg          # system dependency
 pip install -e .                        # gives you the `afrispeech-datagen` command
 ```
+
+GPU is optional — the tool runs on CPU without any extra flags.
 
 ## Quickstart
 
@@ -71,7 +67,7 @@ Everything lands in `data/<name>/` (override with `--out`):
 
 ```
 data/twi-run/
-  wavs/<id>.wav            mono, silence-trimmed, at --sample-rate (default 22050)
+  wavs/<id>.wav            mono, silence-trimmed, at --sample-rate (default 24000)
   manifest.jsonl           full info: id, file, text, gender, speaker, duration
   progress.json            resume state (re-run to continue)
   # + the manifest(s) for the formats you asked for:
@@ -82,14 +78,14 @@ data/twi-run/
 ```
 
 Point your framework's data-prep at this folder — `wavs/` + the matching manifest
-is exactly what LJSpeech/Coqui, Piper, VITS, and MeloTTS expect. The transcript is
-written verbatim (no normalisation — that's the framework's job).
+is exactly what LJSpeech/Coqui, Piper, VITS, and MeloTTS expect. The transcript
+is written verbatim (no normalisation — that's the framework's job).
 
 ## Options
 
 | flag | meaning |
 |------|---------|
-| `--dataset ID` / `--text-column COL` | source: an HF dataset column |
+| `--dataset ID` / `--text-column COL` | source: HF dataset — only the named column is fetched (audio and other columns are skipped) |
 | `--text-file PATH` | source: a .txt file, one sentence per line |
 | `--max-samples N` | use at most N input rows (independent of `--hours`) |
 | `--config` / `--split` | dataset config / split (default split `train`) |
@@ -97,10 +93,10 @@ written verbatim (no normalisation — that's the framework's job).
 | `--voices custom\|male\|female` | speaker selection (default `custom`) |
 | `--male-pct N` | %% male in `custom` mode (deterministic per row) |
 | `--max-chars N` | skip rows longer than this (default 400) |
-| `--sample-rate HZ` | output WAV rate (default 22050; e.g. 24000 for MeloTTS, 44100) |
+| `--sample-rate HZ` | output WAV rate (default 24000 — OmniVoice native; e.g. 22050 for older frameworks) |
 | `--precision fp32\|fp16\|bf16` | model precision (default fp32) — see Performance |
 | `--instances N` | parallel model instances (default: auto by VRAM) |
-| `--cfg` / `--steps` | CFG value / inference timesteps |
+| `--cfg` / `--steps` | CFG guidance scale / MaskGIT decoding steps (defaults 2.0 / 32) |
 | `--formats …` | TTS manifests to write: `ljspeech,piper,vits,melo` (default `ljspeech`) |
 | `--lang CODE` | language code for the `melo` manifest |
 | `--name` / `--out` | run name (→ `data/<name>`) or explicit output dir |
@@ -118,19 +114,21 @@ re-run the same command) and it reads `progress.json` and skips finished rows.
 
 ## Performance & GPU
 
-- **Parallel instances.** Several model copies pull rows off a shared queue
-  (~4.5 GB VRAM each in fp32). It auto-sizes by VRAM — e.g. **2 instances on a
-  T4** (16 GB). Push harder with `--instances 3` if it's stable; a T4 often
-  becomes compute-bound past that.
+- **Automatic GPU/CPU.** OmniVoice detects CUDA at load time and uses it
+  automatically; no flags needed. On CPU it still works, just slower.
+- **Parallel instances.** Several model copies pull rows off a shared queue in
+  parallel (~3 GB VRAM each in fp32, ~2 GB in fp16). Auto-sized by VRAM — e.g.
+  **4 instances on a T4** (fp32) or **6** (fp16). Override with `--instances N`.
 - **Precision** (`--precision`):
   - `fp32` — default, safest, highest quality.
-  - `fp16` — ~half the VRAM (so ~2× the instances) and faster on most GPUs, **but
-    may degrade quality or NaN** on TTS models; preview before committing.
-  - `bf16` — ~half the VRAM, more numerically stable than fp16, **but needs an
-    Ampere+ GPU (A100/L4/H100) — not a T4**.
-- **Sample rate.** The model synthesises at **16 kHz**; output is resampled to
-  `--sample-rate` so files match your framework, but true bandwidth stays ~8 kHz
-  (upsampling doesn't add detail).
+  - `fp16` — ~half the VRAM (more parallel instances) and faster on most GPUs;
+    preview a few clips before a big run.
+  - `bf16` — more numerically stable than fp16, **but needs an Ampere+ GPU
+    (A100/L4/H100) — not a T4**.
+- **Sample rate.** OmniVoice synthesises natively at **24 kHz**; output is
+  resampled to `--sample-rate` (default 24000) to match your framework.
+- **Decoding steps** (`--steps`). Default is 32 (OmniVoice MaskGIT default).
+  Use `--steps 16` for roughly 2× faster generation at slightly lower quality.
 
 ## Use as a library
 
@@ -158,7 +156,7 @@ afrispeech_datagen/
   cli.py             the `afrispeech-datagen` command
   generator.py       voice-clone, silence-trim, parallel run, resume, TTS-format export
   speakers/          built-in male/female reference wav + text
-notebooks/afrispeech_datagen.ipynb   Colab/Kaggle (GPU) runner
+notebooks/afrispeech_datagen.ipynb   Colab/Kaggle runner
 tests/
 ```
 
