@@ -37,6 +37,28 @@ for _g, _s in SPEAKERS.items():
     _s["text"] = Path(_s["txt"]).read_text(encoding="utf-8").strip()
 
 
+def _patch_transformers_for_datasets() -> None:
+    """Restore ``transformers.PreTrainedTokenizerBase`` for older ``datasets``.
+
+    omnivoice pulls in transformers 5.x, which dropped that symbol from the
+    top-level namespace. The ``datasets`` dill-hashing code references it
+    unconditionally (``transformers.PreTrainedTokenizerBase``) while hashing a
+    dataset's ``data_files``, so ``load_dataset`` raises AttributeError. Re-bind
+    the attribute (to the real class if reachable, else a harmless stand-in —
+    our data_files never subclass it, so the issubclass check is False either
+    way) before any dataset load.
+    """
+    import transformers
+    if hasattr(transformers, "PreTrainedTokenizerBase"):
+        return
+    try:
+        from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+    except Exception:
+        class PreTrainedTokenizerBase:  # stand-in; never matched by data_files
+            pass
+    transformers.PreTrainedTokenizerBase = PreTrainedTokenizerBase
+
+
 # --------------------------------------------------------------------------- #
 # Pure helpers (no model / GPU needed — unit-testable)
 # --------------------------------------------------------------------------- #
@@ -290,6 +312,7 @@ def generate(
     if texts is not None:
         source = ((i, t) for i, t in enumerate(texts))
     else:
+        _patch_transformers_for_datasets()
         from datasets import load_dataset
         ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
         ds = ds.select_columns([text_column])
@@ -353,6 +376,7 @@ def preview(*, out_dir, dataset=None, text_column=None, texts=None, config=None,
     if texts is not None:
         source = ((i, t) for i, t in enumerate(texts))
     else:
+        _patch_transformers_for_datasets()
         from datasets import load_dataset
         ds = load_dataset(dataset, config or None, split=split, streaming=True, token=token)
         ds = ds.select_columns([text_column])
